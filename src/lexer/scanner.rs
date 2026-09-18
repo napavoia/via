@@ -1,55 +1,77 @@
 use std::vec;
 
-use crate::lexer::{
-    error::Message,
-    token::{Token, Tokenized},
+use crate::{
+    error,
+    lexer::token::{Token, Tokenized},
 };
 
 pub struct Scanner {
     pub source: String,
+    buffer: String,
+    position: usize,
 }
 
 impl Scanner {
     pub fn new(source: String) -> Self {
-        Self { source }
+        Self {
+            source,
+            buffer: String::new(),
+            position: 0,
+        }
     }
 
-    pub fn tokenize(&self) -> Result<Vec<Token>, Message> {
+    pub fn tokenize(&mut self) -> Vec<Token> {
         let mut result = vec![];
-        let mut chars = self.source.chars();
+        let source = std::mem::take(&mut self.source);
+        let mut chars = source.chars();
 
-        let mut buffer: String = String::new();
-        let mut line = 0;
-        let mut ready = (false, false);
         while let Some(c) = chars.next() {
-            if c.is_whitespace() {
-                ready.0 = true;
-            }
-
-            if c == ';' {
-                ready = (true, true);
-            }
-
-            if ready.0 {
-                if !buffer.is_empty() {
-                    let token = buffer.token(line);
-
-                    result.push(token.unwrap());
+            match c {
+                ';' => {
+                    handle_result(self.read_buffer(), &mut result);
+                    result.push(Token::semicolon(self.position));
                 }
-
-                if ready.1 {
-                    result.push(Token::semicolon(line));
-                    ready.1 = false;
-                } else if c == '\n' {
-                    line += 1;
+                ' ' | '\x09'..='\x0d' => handle_result(self.read_buffer(), &mut result),
+                _ => {
+                    self.buffer.push(c);
                 }
+            };
 
-                ready.0 = false;
-            } else {
-                buffer.push(c);
-            }
+            self.position += 1;
         }
 
-        Ok(result)
+        result.push(Token::without(
+            super::token::TokenKind::EOF,
+            "EOF",
+            self.position..self.position,
+        ));
+
+        result
+    }
+
+    fn read_buffer(&mut self) -> Result<Token, BufferError> {
+        if self.buffer.is_empty() {
+            return Err(BufferError::BufferEmpty);
+        }
+
+        self.buffer.token(self.position).ok_or_else(|| {
+            BufferError::TokenUndefined(format!("Token is undefined:\n\t>>>{}<<<", self.buffer))
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BufferError {
+    BufferEmpty,
+    TokenUndefined(String),
+}
+
+fn handle_result(result: Result<Token, BufferError>, vec: &mut Vec<Token>) {
+    match result {
+        Ok(token) => vec.push(token),
+        Err(err) => match err {
+            BufferError::BufferEmpty => {}
+            BufferError::TokenUndefined(msg) => error(msg),
+        },
     }
 }
