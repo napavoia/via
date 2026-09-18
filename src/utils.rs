@@ -14,10 +14,3 @@ macro_rules! option_match {
         }
     };
 }
-
-pub enum Peek<'a> {
-    Symbol(&'a str),
-    Whitespace,
-    Semicolon,
-    IndexOutBound,
-}
