@@ -1,35 +1,40 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Range};
 
 use regex::regex;
 
 use crate::{lexer::token::TokenKind::Identifier, option_match};
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
     pub lex: String,
     pub val: Value,
-    pub line: usize,
+    pub position: Range<usize>,
 }
 
 impl Token {
     #[inline]
     pub fn semicolon(line: usize) -> Self {
-        Self::without(TokenKind::Semicolon, String::from(";"), line)
+        Self::without(TokenKind::Semicolon, ";", line..line + 1)
     }
 
     #[inline]
-    pub fn without(kind: TokenKind, lex: String, line: usize) -> Self {
+    pub fn without<S: Into<String>>(kind: TokenKind, lex: S, line: Range<usize>) -> Self {
         Self::with(kind, lex, Value::None, line)
     }
 
     #[inline]
-    pub fn with(kind: TokenKind, lex: String, val: Value, line: usize) -> Self {
+    pub fn with<S: Into<String>>(
+        kind: TokenKind,
+        lex: S,
+        val: Value,
+        position: Range<usize>,
+    ) -> Self {
         Self {
             kind,
-            lex,
+            lex: lex.into(),
             val,
-            line,
+            position,
         }
     }
 }
@@ -39,11 +44,15 @@ impl Display for Token {
         if self.kind.has_value() {
             write!(
                 f,
-                "[T:{}] {:?}('{}' - '{}')",
-                self.line, self.kind, self.lex, self.val
+                "[T:{}..{}] {:?}('{}' - '{}')",
+                self.position.start, self.position.end, self.kind, self.lex, self.val
             )
         } else {
-            write!(f, "[T:{}] {:?}('{}')", self.line, self.kind, self.lex)
+            write!(
+                f,
+                "[T:{}..{}] {:?}('{}')",
+                self.position.start, self.position.end, self.kind, self.lex
+            )
         }
     }
 }
@@ -122,24 +131,26 @@ impl Tokenized for String {
             );
         }
 
-        let out = if self.len() == 1 {
+        let kind = if self.len() == 1 {
             let kind = single(self);
             if kind.is_none() {
                 return None;
             }
 
-            Some(Token::without(kind.unwrap(), self.clone(), line))
+            kind.unwrap()
         } else {
             let kind = mult(self);
             if kind.is_none() {
                 return None;
             }
 
-            Some(Token::without(kind.unwrap(), self.clone(), line))
+            kind.unwrap()
         };
 
+        let lex = self.clone();
+
         self.clear();
-        out
+        Some(Token::without(kind, lex, line - self.len()..line))
     }
 }
 
@@ -245,31 +256,5 @@ impl TokenKind {
             Self::Null => true,
             _ => false,
         }
-    }
-}
-
-pub struct DisplayTokens<'a>(pub &'a [Token]);
-
-impl Display for DisplayTokens<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut line = (0, false);
-        write!(f, "=[  ")?;
-        for (i, t) in self.0.iter().enumerate() {
-            if !line.1 {
-                line.1 = true;
-                line.0 = t.line;
-            }
-
-            if t.line > line.0 {
-                line.0 = t.line;
-                write!(f, "  ]=")?;
-                write!(f, "\n")?;
-                write!(f, "=[  ")?;
-            } else if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", t)?;
-        }
-        write!(f, "  ]=")
     }
 }
